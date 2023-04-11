@@ -1,0 +1,144 @@
+---
+title: "European Temperatures"
+format: gfm
+---
+
+## Purpose
+
+I want to aggregate average temperature readings and perhaps precipitation for Europe at NUTS2 as well as Spain and Sweden at NUTS3 level from the gridded temperature data that is available from [berkeleyearth.org](https://berkeleyearth.org/data/).
+
+### Planning
+
+-   Import necessary libraries
+
+-   Read in the .nc file and extract the temperature data
+
+-   Read in the NUTS2 map data
+
+-   Convert the temperature data from 1 by 1 degree cells to NUTS2 level using the map
+
+-   Aggregate the temperature data to NUTS2 level
+
+-   Save the aggregated data to a new file
+
+```{python}
+# Import necessary libraries
+import numpy as np
+import xarray as xr
+import pandas as pd
+import geopandas as gpd
+
+# Read in the .nc file and extract the temperature data
+ds = xr.open_dataset('data/Europe_TAVG_Gridded_1.nc')
+temp_data = ds.temperature.values
+
+print(temp_data.shape)
+```
+
+```{python}
+import matplotlib.pyplot as plt
+
+# Extract the temperature data for the first grid cell
+temp_data_first_cell = ds.temperature.values[:, 1, 1]
+
+# Create an array of dates from 1850 to 2021
+start_date = np.datetime64('1850-01-01')
+end_date = np.datetime64('2023-03-01') # The data only goes up until March 2021
+n_months = temp_data_first_cell.shape[0] # Number of months in the temperature data
+dates = np.arange(start_date, end_date, dtype='datetime64[M]')[:n_months] # Subset of dates array that matches the length of the temperature data
+
+# Plot a time series of monthly temperatures
+fig, ax = plt.subplots(figsize=(12, 6))
+ax.plot(dates, temp_data_first_cell, linewidth=1)
+ax.set_xlabel('Date')
+ax.set_ylabel('Temperature (°C)')
+ax.set_title('Monthly Temperature in First Grid Cell')
+plt.show()
+
+```
+
+
+```{python}
+# Read in the NUTS2 map data
+nuts2_map = gpd.read_file('data/regions_nuts2.shp')
+
+# name the regions differently
+nuts2_map['NUTS_CODE'].replace({'AT123': 'AT12+AT13', 'DE712': 'DE71+DE72', 'DE912': 'DE91+DE92'}, inplace=True)
+
+
+# Convert the temperature data from 1 by 1 degree cells to NUTS2 level using the map
+temp_data_nuts2 = np.zeros(nuts2_map.shape[0])
+for i in range(nuts2_map.shape[0]):
+    nuts2_polygon = nuts2_map.loc[i, 'geometry']
+    temp_data_nuts2[i] = np.mean(temp_data[nuts2_polygon.contains(ds.longitude.values), nuts2_polygon.contains(ds.latitude.values)])
+
+# Aggregate the temperature data to NUTS2 level
+nuts2_map['temperature'] = temp_data_nuts2
+
+# Save the aggregated data to a new file
+nuts2_map.to_file('aggregated_temperature_data.shp')
+
+```
+
+
+
+```{python}
+import numpy as np
+import xarray as xr
+import geopandas as gpd
+import regionmask
+
+# Load the CRU TS dataset
+cru_ts_data_path = 'data/Europe_TAVG_Gridded_1.nc'  # Replace with the path to your CRU TS data file
+ds = xr.open_dataset(cru_ts_data_path)
+
+# Load the NUTS 2 shapefile
+nuts2_shapefile = 'data/regions_nuts2.shp'
+nuts2_gdf = gpd.read_file(nuts2_shapefile)
+# name the regions differently
+nuts2_gdf['NUTS_CODE'].replace({'AT123': 'AT12+AT13', 'DE712': 'DE71+DE72', 'DE912': 'DE91+DE92'}, inplace=True)
+
+# Convert the shapefile to regionmask Regions
+nuts2_regions = regionmask.from_geopandas(nuts2_gdf, names='NUTS_CODE', abbrevs='NUTS_CODE', name='NUTS2')
+
+# Create a regionmask mask
+mask = nuts2_regions.mask(ds, lon_name="longitude", lat_name="latitude")
+
+# Compute the weighted mean for each NUTS 2 region using the latitude weights
+weights = np.cos(np.deg2rad(ds.latitude))
+weights = xr.DataArray(weights, dims=('latitude',))
+combined_weights = (mask * weights).fillna(0)
+nuts2_mean = ds.weighted(combined_weights).mean(('latitude', 'longitude'))
+
+# Save the aggregated data to a netCDF file
+nuts2_mean.to_netcdf('data/cru_ts_aggregated_to_nuts2.nc')
+
+
+```
+
+Visualize
+
+```{python}
+import matplotlib.pyplot as plt
+
+# Convert the xarray Dataset to a pandas DataFrame
+nuts2_mean_df = nuts2_mean.to_dataframe().reset_index()
+
+# Select the temperature variable and the first available time period
+variable_name = 'temperature'  # Replace with the variable name you want to visualize
+time_slice = nuts2_mean_df['time'].min()  # Select the first available time period
+
+selected_data = nuts2_mean_df[nuts2_mean_df['time'] == time_slice].drop(columns=['time'])
+
+# Merge the NUTS 2 shapefile with the aggregated data
+nuts2_gdf_merged = nuts2_gdf.merge(selected_data, left_on='NUTS_CODE', right_on='region')
+
+# Create the choropleth map
+fig, ax = plt.subplots(1, 1, figsize=(15, 20))
+nuts2_gdf_merged.plot(column=variable_name, cmap='coolwarm', legend=True, ax=ax)
+ax.set_title(f'Choropleth Map of {variable_name.capitalize()} at {time_slice}', fontsize=20)
+ax.set_axis_off()
+plt.show()
+
+```
+
