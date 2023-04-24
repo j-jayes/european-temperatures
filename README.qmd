@@ -111,6 +111,7 @@ combined_weights = (mask * weights).fillna(0)
 nuts2_mean = ds.weighted(combined_weights).mean(('latitude', 'longitude'))
 
 # Save the aggregated data to a netCDF file
+
 nuts2_mean.to_netcdf('data/cru_ts_aggregated_to_nuts2.nc')
 
 

@@ -1,0 +1,86 @@
+---
+title: "Ingest and reshape"
+format: html
+---
+
+
+## Purpose
+
+I want to aggregate average temperature readings and perhaps precipitation for Europe at NUTS2 as well as Spain and Sweden at NUTS3 level from the gridded temperature data that is available from [berkeleyearth.org](https://berkeleyearth.org/data/).
+
+### Planning
+
+-   Import necessary libraries
+
+-   Read in the .nc file and extract the temperature data
+
+-   Read in the NUTS2 map data
+
+-   Convert the temperature data from 1 by 1 degree cells to NUTS2 level using the map
+
+-   Aggregate the temperature data to NUTS2 level
+
+-   Save the aggregated data to a new file
+
+
+```{r}
+# install.packages(c("ncdf4"))
+# install.packages("exactextractr")
+library(exactextractr)
+library(ncdf4)
+library(sf)
+library(raster)
+library(tidyverse)
+```
+
+
+```{r}
+nc_file <- "data/Europe_TAVG_Gridded_1.nc"
+nc_data <- nc_open(nc_file)
+
+# Extract temperature data
+temp_data <- ncvar_get(nc_data, "temperature")
+
+# Extract latitude and longitude
+lat <- ncvar_get(nc_data, "latitude")
+lon <- ncvar_get(nc_data, "longitude")
+
+# Get the time variable and convert it to a date object
+time <- ncvar_get(nc_data, "time")
+time_unit <- ncatt_get(nc_data, "time", "units")$value
+time_date <- as.Date(time, origin = "1800-01-01", units = time_unit)
+
+```
+
+```{r}
+regions_nuts2 <- st_read("data/regions_nuts2.shp")
+
+```
+
+
+```{r}
+# Aggregate the temperature data to the NUTS2 regions
+regions_nuts2_temp <- lapply(1:length(time_date), function(i) {
+  raster_data <- raster_stack[[i]]
+  temp_agg <- exact_extract(raster_data, regions_nuts2, fun = mean, na.rm = TRUE, summarize_df = TRUE)
+  return(temp_agg)
+})
+
+# Convert the extracted data to a data frame
+regions_nuts2_temp_df <- as.data.frame(do.call(rbind, regions_nuts2_temp))
+colnames(regions_nuts2_temp_df) <- c("Avg_Temperature")
+
+# Add the date and region ID information
+regions_nuts2_temp_df$Date <- rep(time_date, each = nrow(regions_nuts2))
+regions_nuts2_temp_df$ID <- rep(regions_nuts2$ID, length(time_date))
+
+# Merge with the original shapefile data
+regions_nuts2_data <- st_drop_geometry(regions_nuts2)
+result <- left_join(regions_nuts2_data, regions_nuts2_temp_df, by = "ID")
+
+# Save the results to a CSV file
+write_csv(result, "data/average_temperature_nuts2.csv")
+
+
+```
+
