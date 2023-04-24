@@ -167,3 +167,51 @@ map_time_period_1000 <- create_choropleth_map(nuts2_regions, nuts2_temp_df, time
 print(map_time_period_1000)
 ```
 
+
+## join dates
+
+```{r}
+# Create a date mapping data frame
+start_date <- as.Date("1850-01-01")
+date_mapping <- data_frame(time_chunk = 1:2077,
+                           date = seq(from = start_date, by = "month", length.out = 2077))
+
+# Join the dates with the time period numbers
+nuts2_temp_df_with_dates <- nuts2_temp_df %>%
+  left_join(date_mapping, by = "time_chunk")
+
+```
+
+
+```{r}
+create_choropleth_map <- function(nuts2_shapefile, temp_data, time_period) {
+  # Merge the temperature data for the given time period with the NUTS2 shapefile
+  nuts2_regions_temp <- nuts2_shapefile %>%
+    left_join(temp_data %>% filter(time_chunk == time_period), by = c("nuts_code_numeric" = "nuts2_id"))
+  
+  # Extract the date for the given time period
+  time_period_date <- temp_data %>% filter(time_chunk == time_period) %>% pull(date) %>% first()
+  
+  # Create a choropleth map
+  choropleth_map <- ggplot() +
+    geom_sf(data = nuts2_regions_temp, aes(fill = mean_temp), size = 0.2) +
+    scale_fill_viridis_c(option = "plasma", na.value = "grey50",
+                         name = "Mean Temperature") +
+    theme_minimal() +
+    theme(legend.position = "bottom",
+          legend.key.width = unit(2, "cm"),
+          panel.grid.major = element_blank(),
+          panel.grid.minor = element_blank()) +
+    ggtitle(paste("Mean Temperature for NUTS2 Regions -", format(time_period_date, "%Y-%m")))
+  
+  return(choropleth_map)
+}
+
+```
+
+```{r}
+map_time_period_1000 <- create_choropleth_map(nuts2_regions, nuts2_temp_df_with_dates, time_period = 1900)
+print(map_time_period_1000)
+```
+
+
