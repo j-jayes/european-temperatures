@@ -1,0 +1,53 @@
+---
+title: "Python"
+format: html
+---
+
+
+
+```{python}
+import pandas as pd
+import numpy as np
+import requests
+import io
+import gzip
+
+# Define the URLs for the data files
+urls = {
+    "winter": "https://crudata.uea.ac.uk/cru/projects/soap/pw/data/recon/luter04/temp_luterbacher_wi.txt.gz",
+    "spring": "https://crudata.uea.ac.uk/cru/projects/soap/pw/data/recon/luter04/temp_xoplaki_sp.txt.gz",
+    "summer": "https://crudata.uea.ac.uk/cru/projects/soap/pw/data/recon/luter04/temp_luterbacher_su.txt.gz",
+    "autumn": "https://crudata.uea.ac.uk/cru/projects/soap/pw/data/recon/luter04/temp_xoplaki_au.txt.gz"
+}
+
+# Function to download and parse the data file
+def download_and_parse_data(url):
+    response = requests.get(url)
+    with gzip.open(io.BytesIO(response.content), 'rt') as f:
+        lines = f.readlines()
+
+    data = []
+    for i in range(0, len(lines), 71):
+        year_season = lines[i].strip().split()
+        year = int(year_season[0])
+        season = int(year_season[1])
+        grid_data = np.array([list(map(float, line.strip().split())) for line in lines[i+1:i+71]])
+        data.append({"year": year, "season": season, "grid_data": grid_data})
+
+    return data
+
+# Download and parse the data for each season
+seasonal_data = {}
+for season, url in urls.items():
+    seasonal_data[season] = download_and_parse_data(url)
+
+# Example: Access the grid data for winter of 1500
+print(seasonal_data["winter"][0]["grid_data"])
+
+```
+
+
+```{python}
+
+
+```

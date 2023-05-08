@@ -1,0 +1,95 @@
+---
+title: "02-Ingest-1500-onwards"
+format: html
+---
+
+## Purpose
+
+Hi again Jonathan!
+
+Here comes some of my thoughts about the temperature and precipitation data. The [datasets are here](https://crudata.uea.ac.uk/cru/projects/soap/data/recon/#paul05):
+•	Reconstruction from 1500-present of seasonal temperatures for a grid covering Europe [Luterbacher et al., 2004; Xoplaki et al., 2005]
+•	Reconstruction from 1500-present of seasonal precipitation for a grid covering Europe [Pauling et al., 2005].
+
+From these sources if would be useful to have the temperature per year in NUTS 2 regional data that we have from Rosés and Wolf. Ideally also into NUT3 for Spain and Sweden (although I am not sure that it makes much difference?)
+
+This is the procedure used by Caprettini and Voth for their paper Rage against the Machines: Labor-Saving Technology and Unrest in Industrializing England (2020):
+Caprettini and Voth construct abnormal precipitation and temperature in 1830 as the deviation from the average weather in 1800–1828. We can to do something similar but for every ten year from 1500, and for this we need the yearly temperatures by NUTs region. 
+
+This text details how Caprettini and Voth (2020) process, but they use only one year (1830) and British parishes, while we want the entire NUTS distribution 1500-present. It also seems like they calculate abnormal temperatures per grid cell, but for our purposes I think we could try to just get the yearly average temperatures of all grids that fall into the same NUTS region. It seems to me a lot easier to work with, but I am not sure and would love to hear your inputs on this. Once we have a yearly time series with temperatures by NUTS we can calculate deviations from the trend based various trend assumptions, but we can do this in stata.
+
+From Caprettini and Voth (2020):
+
+“Abnormal precipitation (spring and summer 1830) and temperature. We take historical precipitation from Pauling et al. (2006). They used documentary evidence and natural proxies to estimate seasonal precipitation for the period 1500-1900 over a 0.5 × 0.5 degrees grid covering Europe (approximately 55.5 × 55.5 km). To construct abnormal precipitation in the spring (summer) of 1830 across England and Wales, we take average spring (summer) precipitation in 1830 and subtract the average spring (summer) precipitation in the years 1800-1828. We do this for every cell that covers the British Isle, obtaining a new raster with the abnormal precipitation in the spring (summer) of 1830. Next, we resample this raster on a finer grid of 88.8 × 88.8 m with the “nearest” method, and superimpose it onto our historical map of English and Welsh parishes. For every cell of the raster, we take its centroid and assign it to the parish witin which the centroid falls. Finally, for every parish we calculate the average abnormal precipitation in the spring (summer) of 1830 of every cell that falls inside the parish. For abnormal temperature, we follow the same procedure using historical temperature data from Luterbacher et al. (2004).”
+
+## Planning
+
+1. Ingest the data
+2. Read in the map files
+3. Combine?
+
+## Ingest
+
+Start with temperature
+
+```{r}
+
+library(tidyverse)
+
+library(readr)
+
+# Define a function to read and process the grid data
+read_temperature_data <- function(file_path, season) {
+  data <- read_lines(file_path) %>%
+    enframe(name = "row_number", value = "line") %>%
+    mutate(year_season = rep(seq(1500, 2002), each = 71)) %>%
+    filter(row_number %% 71 != 0) %>%
+    mutate(row_number = row_number %% 71) %>%
+    mutate(season = season,
+           latitude = 69.75 - (row_number - 1) * 0.5) %>% 
+    unnest(longitude = map(line, function(x) str_split(x, "\t") %>%
+             map(parse_double)) %>%
+             map(~ . - 24.75 + 0.5 * seq_along(.))) %>%
+    select(-line) %>%
+    rename(temperature = value)
+  
+  return(data)
+}
+
+# Read data for each season
+file_paths <- c(here::here("data", "temp_luterbacher_wi.txt.gz"),
+                here::here("data", "temp_xoplaki_sp.txt.gz"),
+                here::here("data", "temp_luterbacher_su.txt.gz"),
+                here::here("data", "temp_xoplaki_au.txt.gz"))
+
+seasons <- c(13, 14, 15, 16)
+
+temperature_data <- map2_df(file_paths, seasons, read_temperature_data)
+
+# Remove non-land grid boxes
+temperature_data <- temperature_data %>%
+  filter(temperature != -99.999)
+
+```
+
+
+```{r}
+read_temperature_data <- function(file_path, season) {
+  data <- read_lines(file_path) %>%
+    enframe(name = "row_number", value = "line") %>%
+    mutate(year_season = rep(seq(1500, 2002), each = 71)) %>%
+    filter(row_number %% 71 != 0) %>%
+    mutate(row_number = row_number %% 71) %>%
+    mutate(season = season,
+           latitude = 69.75 - (row_number - 1) * 0.5) %>%
+    unnest(longitude = map(line, function(x) str_split(x, "\t", simplify = TRUE) %>%
+             map(parse_double) %>%
+             map_dbl(~ . - 24.75 + 0.5 * seq_along(.)))) %>%
+    select(-line) %>%
+    rename(temperature = value)
+  
+  return(data)
+}
+
+```
+

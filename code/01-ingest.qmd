@@ -92,7 +92,12 @@ nuts2_temp_df <- lapply(1:nlayers(raster_stack), function(i) {
 ```
 
 ```{r}
-write_csv(nuts2_temp_df, "data/aggregated_temperature_nuts2.csv")
+
+nuts2_temp_df <- nuts2_temp_df %>% 
+  janitor::clean_names()
+
+nuts2_temp_df %>% 
+  write_rds("data/aggregated_temperature_nuts2.rds")
 
 ```
 
